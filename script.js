@@ -16,11 +16,11 @@ const KNOWN_TILE_CLASSES = new Set([
   4096,
 ]);
 
-const boardElement = document.getElementById("board");
-const scoreElement = document.getElementById("score");
-const bestScoreElement = document.getElementById("best-score");
-const statusElement = document.getElementById("status");
-const newGameButton = document.getElementById("new-game-btn");
+let boardElement;
+let scoreElement;
+let bestScoreElement;
+let statusElement;
+let newGameButton;
 
 let board = [];
 let tileElements = [];
@@ -30,10 +30,30 @@ let hasWon = false;
 let isGameOver = false;
 let touchStartX = 0;
 let touchStartY = 0;
+let statusTimerId = null;
 
-initializeBoardUI();
-startNewGame();
-registerEventHandlers();
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bootstrap, { once: true });
+} else {
+  bootstrap();
+}
+
+function bootstrap() {
+  boardElement = document.getElementById("board");
+  scoreElement = document.getElementById("score");
+  bestScoreElement = document.getElementById("best-score");
+  statusElement = document.getElementById("status");
+  newGameButton = document.getElementById("new-game-btn");
+
+  if (!boardElement || !scoreElement || !bestScoreElement || !statusElement || !newGameButton) {
+    console.error("Game initialization failed: missing required DOM elements.");
+    return;
+  }
+
+  initializeBoardUI();
+  startNewGame(false);
+  registerEventHandlers();
+}
 
 function initializeBoardUI() {
   for (let i = 0; i < GRID_SIZE * GRID_SIZE; i += 1) {
@@ -47,21 +67,32 @@ function initializeBoardUI() {
   bestScoreElement.textContent = String(bestScore);
 }
 
-function startNewGame() {
-  board = createEmptyBoard();
+function startNewGame(showFeedback = false) {
+  const previousSnapshot = board.length === GRID_SIZE ? snapshotBoard(board) : null;
+  let rerollAttempts = 0;
+
+  do {
+    board = createEmptyBoard();
+    addRandomTile();
+    addRandomTile();
+    rerollAttempts += 1;
+  } while (previousSnapshot && snapshotBoard(board) === previousSnapshot && rerollAttempts < 8);
+
   score = 0;
   hasWon = false;
   isGameOver = false;
-  setStatus("", "");
-
-  addRandomTile();
-  addRandomTile();
   renderBoard();
+
+  if (showFeedback) {
+    setTemporaryStatus("Started a new game.", "win", 900);
+  } else {
+    setStatus("", "");
+  }
 }
 
 function registerEventHandlers() {
   document.addEventListener("keydown", handleKeydown);
-  newGameButton.addEventListener("click", startNewGame);
+  newGameButton.addEventListener("click", handleNewGameClick);
 
   boardElement.addEventListener(
     "touchstart",
@@ -99,7 +130,18 @@ function registerEventHandlers() {
   );
 }
 
+function handleNewGameClick(event) {
+  event.preventDefault();
+  startNewGame(true);
+}
+
 function handleKeydown(event) {
+  if (event.key === "r" || event.key === "R") {
+    event.preventDefault();
+    startNewGame(true);
+    return;
+  }
+
   const directionByKey = {
     ArrowLeft: "left",
     ArrowRight: "right",
@@ -287,8 +329,26 @@ function renderBoard() {
 }
 
 function setStatus(message, state) {
+  clearStatusTimer();
   statusElement.textContent = message;
   statusElement.className = state ? `status ${state}` : "status";
+}
+
+function setTemporaryStatus(message, state, durationMs) {
+  setStatus(message, state);
+  statusTimerId = window.setTimeout(() => {
+    statusTimerId = null;
+    setStatus("", "");
+  }, durationMs);
+}
+
+function clearStatusTimer() {
+  if (statusTimerId === null) {
+    return;
+  }
+
+  window.clearTimeout(statusTimerId);
+  statusTimerId = null;
 }
 
 function createEmptyBoard() {
@@ -307,6 +367,10 @@ function arraysEqual(left, right) {
   }
 
   return true;
+}
+
+function snapshotBoard(grid) {
+  return grid.flat().join(",");
 }
 
 function readBestScore() {
